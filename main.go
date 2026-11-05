@@ -11,6 +11,25 @@ type User struct {
 	Balance float64
 }
 
+type Transaction struct {
+	FromID string
+	ToID   string
+	Amount float64
+}
+
+type PaymentSystem struct {
+	Users            map[string]*User
+	TransactionQueue []Transaction
+}
+
+func (p *PaymentSystem) AddUser(user *User) {
+	p.Users[user.ID] = user
+}
+
+func (p *PaymentSystem) AddTransaction(transaction Transaction) {
+	p.TransactionQueue = append(p.TransactionQueue, transaction)
+}
+
 func (u *User) Deposit(amount float64) error {
 	if amount <= 0 {
 		return errors.New("deposit amount must be a positive value")
@@ -18,6 +37,7 @@ func (u *User) Deposit(amount float64) error {
 	u.Balance += amount
 	return nil
 }
+
 func (u *User) Withdraw(amount float64) error {
 	if amount <= 0 {
 		return errors.New("withdrawal amount must be greater than zero")
@@ -29,39 +49,76 @@ func (u *User) Withdraw(amount float64) error {
 	return nil
 }
 
+func (p *PaymentSystem) ProcessingTransactions(transaction Transaction) error {
+	if transaction.Amount <= 0 {
+		return errors.New("transaction amount must be positive")
+	}
+	sender, ok := p.Users[transaction.FromID]
+	if !ok {
+		return errors.New("sender not found")
+	}
+	receiver, ok := p.Users[transaction.ToID]
+	if !ok {
+		return errors.New("receiver not found")
+	}
+	if err := sender.Withdraw(transaction.Amount); err != nil {
+		return err
+	}
+	if err := receiver.Deposit(transaction.Amount); err != nil {
+		sender.Deposit(transaction.Amount)
+		return err
+	}
+	return nil
+}
+
 func main() {
+	system := &PaymentSystem{
+		Users:            make(map[string]*User),
+		TransactionQueue: []Transaction{},
+	}
+
 	user1 := &User{
 		ID:      "1",
 		Name:    "Megan",
 		Balance: 100.0,
 	}
+	system.AddUser(user1)
+
 	user2 := &User{
 		ID:      "2",
 		Name:    "Fox",
 		Balance: 200.0,
 	}
-	if err := user1.Deposit(80.0); err != nil {
-		fmt.Println("Error:", err)
+	system.AddUser(user2)
+
+	transaction1 := Transaction{
+		FromID: "1",
+		ToID:   "2",
+		Amount: 50.0,
 	}
+	system.AddTransaction(transaction1)
+
+	transaction2 := Transaction{
+		FromID: "2",
+		ToID:   "1",
+		Amount: 30.0,
+	}
+	system.AddTransaction(transaction2)
+
+	transaction3 := Transaction{
+		FromID: "1",
+		ToID:   "2",
+		Amount: 222.0,
+	}
+
+	system.AddTransaction(transaction3)
+
+	for _, transaction := range system.TransactionQueue {
+		if err := system.ProcessingTransactions(transaction); err != nil {
+			fmt.Println("Error processing transaction:", err)
+		}
+	}
+
 	fmt.Println(user1.Name, user1.Balance)
-
-	if err := user2.Withdraw(100.0); err != nil {
-		fmt.Println("Error:", err)
-	}
-	fmt.Println(user2.Name, user2.Balance)
-
-	if err := user1.Withdraw(300.0); err != nil {
-		fmt.Println("Error:", err)
-	}
-	fmt.Println(user1.Name, user1.Balance)
-
-	if err := user1.Withdraw(50.0); err != nil {
-		fmt.Println("Error:", err)
-	}
-	fmt.Println(user1.Name, user1.Balance)
-
-	if err := user2.Deposit(50.0); err != nil {
-		fmt.Println("Error:", err)
-	}
 	fmt.Println(user2.Name, user2.Balance)
 }

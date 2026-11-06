@@ -3,12 +3,14 @@ package main
 import (
 	"errors"
 	"fmt"
+	"sync"
 )
 
 type User struct {
 	ID      string
 	Name    string
 	Balance float64
+	mu      sync.Mutex
 }
 
 type Transaction struct {
@@ -31,14 +33,19 @@ func (p *PaymentSystem) AddTransaction(transaction Transaction) {
 }
 
 func (u *User) Deposit(amount float64) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	if amount <= 0 {
 		return errors.New("deposit amount must be a positive value")
 	}
 	u.Balance += amount
 	return nil
+
 }
 
 func (u *User) Withdraw(amount float64) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	if amount <= 0 {
 		return errors.New("withdrawal amount must be greater than zero")
 	}
@@ -71,7 +78,17 @@ func (p *PaymentSystem) ProcessingTransactions(transaction Transaction) error {
 	return nil
 }
 
+func (ps *PaymentSystem) Worker(ch <-chan Transaction, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for t := range ch {
+		if err := ps.ProcessingTransactions(t); err != nil {
+			fmt.Println("Error processing transaction:", err)
+		}
+	}
+}
+
 func main() {
+
 	system := &PaymentSystem{
 		Users:            make(map[string]*User),
 		TransactionQueue: []Transaction{},
@@ -113,11 +130,22 @@ func main() {
 
 	system.AddTransaction(transaction3)
 
-	for _, transaction := range system.TransactionQueue {
-		if err := system.ProcessingTransactions(transaction); err != nil {
-			fmt.Println("Error processing transaction:", err)
-		}
+	wg := &sync.WaitGroup{}
+
+	var ch chan Transaction = make(chan Transaction, len(system.TransactionQueue))
+
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go system.Worker(ch, wg)
 	}
+
+	for _, t := range system.TransactionQueue {
+		ch <- t
+	}
+
+	close(ch)
+
+	wg.Wait()
 
 	fmt.Println(user1.Name, user1.Balance)
 	fmt.Println(user2.Name, user2.Balance)
